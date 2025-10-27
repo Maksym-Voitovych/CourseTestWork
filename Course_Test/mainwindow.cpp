@@ -2,6 +2,7 @@
 #include "ui_mainwindow.h"
 #include "add.h"
 #include "delete.h"
+#include "addcategories.h"
 #include <QSqlQueryModel>
 #include <QSqlError>
 #include <QMessageBox>
@@ -12,7 +13,11 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-
+    connect(ui->pushButtonAddCategories, &QPushButton::clicked, this, [=]() {
+        AddCategories dlg(this, db);
+        dlg.exec();
+        loadCategories();
+    });
     connect(ui->pushButtonAddProduct, &QPushButton::clicked, this, &MainWindow::on_pushButtonAddProduct_clicked);
     connect(ui->pushButtonDeleteProduct, &QPushButton::clicked, this, &MainWindow::on_pushButtonDeleteProduct_clicked);
 
@@ -54,19 +59,14 @@ void MainWindow::loadCategories()
     auto *model = new QSqlQueryModel(this);
     model->setQuery(R"(
         SELECT
-            CASE category
-                WHEN 'smartphones' THEN 'Смартфони'
-                WHEN 'laptops'     THEN 'Ноутбуки'
-                WHEN 'tablets'     THEN 'Планшети'
-                ELSE category
-            END AS "Категорія товарів"
-        FROM products
-        GROUP BY category
-        ORDER BY category ASC
+            category_name AS "Категорія товарів"
+        FROM categories
+        ORDER BY category_id ASC
     )", db);
 
     if (model->lastError().isValid()) {
-        QMessageBox::warning(this, "Помилка", "Не вдалося завантажити категорії:\n" + model->lastError().text());
+        QMessageBox::warning(this, "Помилка",
+                             "Не вдалося завантажити категорії:\n" + model->lastError().text());
         return;
     }
 
@@ -91,36 +91,37 @@ void MainWindow::onCategorySelected(const QModelIndex &index)
                                ->data(ui->tableViewProducts->model()->index(index.row(), 0))
                                .toString().trimmed();
 
-    if (categoryName == "Смартфони") categoryName = "smartphones";
-    else if (categoryName == "Ноутбуки") categoryName = "laptops";
-    else if (categoryName == "Планшети") categoryName = "tablets";
-
     if (!categoryName.isEmpty())
         loadProducts(categoryName);
 }
 
 void MainWindow::loadProducts(QString category)
 {
-    if (!db.isOpen()) return;
+    if (!db.isOpen())
+        return;
 
     currentCategory = category;
     ui->buttonBack->setVisible(true);
 
-    auto *model = new QSqlQueryModel(this);
-    model->setQuery(QString(R"(
-        SELECT product_id AS "ID",
-               brand        AS "Бренд",
-               model        AS "Модель",
-               release_year AS "Рік випуску",
-               price        AS "Ціна",
-               stock        AS "Кількість"
-        FROM products
-        WHERE category = '%1'
-        ORDER BY product_id DESC
-    )").arg(category), db);
+    QSqlQueryModel *model = new QSqlQueryModel(this);
+    QString query = QString(R"(
+        SELECT p.product_id AS "ID",
+               p.brand       AS "Бренд",
+               p.model       AS "Модель",
+               p.release_year AS "Рік випуску",
+               p.price        AS "Ціна",
+               p.stock        AS "Кількість"
+        FROM products p
+        JOIN categories c ON p.category_id = c.category_id
+        WHERE LOWER(c.category_name) = LOWER('%1')
+        ORDER BY p.product_id DESC
+    )").arg(category);
+
+    model->setQuery(query, db);
 
     if (model->lastError().isValid()) {
-        QMessageBox::warning(this, "Помилка", "Не вдалося завантажити товари:\n" + model->lastError().text());
+        QMessageBox::warning(this, "Помилка",
+                             "Не вдалося завантажити товари:\n" + model->lastError().text());
         return;
     }
 
@@ -129,33 +130,33 @@ void MainWindow::loadProducts(QString category)
     ui->tableViewProducts->setAlternatingRowColors(true);
     ui->tableViewProducts->setSortingEnabled(true);
 
-    auto *header = ui->tableViewProducts->horizontalHeader();
+    QHeaderView *header = ui->tableViewProducts->horizontalHeader();
     connect(header, &QHeaderView::sectionClicked, this, [=](int logicalIndex) {
         QString columnName;
-        if (logicalIndex == 4) columnName = "price";
-        else if (logicalIndex == 5) columnName = "stock";
+        if (logicalIndex == 4) columnName = "p.price";
+        else if (logicalIndex == 5) columnName = "p.stock";
         else return;
 
         static bool ascending = true;
         QString order = ascending ? "ASC" : "DESC";
         ascending = !ascending;
 
-        QString query = QString(R"(
-            SELECT product_id AS "ID",
-                   brand AS "Бренд",
-                   model AS "Модель",
-                   release_year AS "Рік випуску",
-                   price AS "Ціна",
-                   stock AS "Кількість"
-            FROM products
-            WHERE category = '%1'
+        QString sortQuery = QString(R"(
+            SELECT p.product_id AS "ID",
+                   p.brand       AS "Бренд",
+                   p.model       AS "Модель",
+                   p.release_year AS "Рік випуску",
+                   p.price        AS "Ціна",
+                   p.stock        AS "Кількість"
+            FROM products p
+            JOIN categories c ON p.category_id = c.category_id
+            WHERE LOWER(c.category_name) = LOWER('%1')
             ORDER BY %2 %3
         )").arg(currentCategory, columnName, order);
 
-        model->setQuery(query, db);
+        model->setQuery(sortQuery, db);
     });
 }
-
 void MainWindow::on_pushButtonAddProduct_clicked()
 {
     static bool isOpen = false;
