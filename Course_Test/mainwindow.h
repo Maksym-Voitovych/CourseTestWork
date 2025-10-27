@@ -11,7 +11,6 @@ QT_END_NAMESPACE
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
-
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
@@ -20,7 +19,6 @@ private slots:
     void on_pushButtonAddProduct_clicked();
     void on_pushButtonDeleteProduct_clicked();
     void onCategorySelected(const QModelIndex &index);
-
 private:
     Ui::MainWindow *ui;
     QSqlDatabase db;
