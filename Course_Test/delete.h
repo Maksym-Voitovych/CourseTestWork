@@ -23,7 +23,7 @@ private slots:
 private:
     Ui::Delete *ui;
     QSqlDatabase db;
-    void loadProductIDs(const QString &category);
+   void loadProductIDs(int categoryId);
 };
 
 #endif // DELETE_H
