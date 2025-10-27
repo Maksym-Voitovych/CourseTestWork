@@ -14,12 +14,23 @@ Delete::Delete(QWidget *parent, QSqlDatabase database)
     ui->setupUi(this);
     setWindowTitle("Видалення товару");
     ui->comboBoxCategory->clear();
-    ui->comboBoxCategory->addItem("Смартфони", "smartphones");
-    ui->comboBoxCategory->addItem("Ноутбуки", "laptops");
-    ui->comboBoxCategory->addItem("Планшети", "tablets");
-    connect(ui->comboBoxCategory, &QComboBox::currentIndexChanged, this, &Delete::onCategoryChanged);
-    connect(ui->pushButtonDelete, &QPushButton::clicked, this, &Delete::onDeleteClicked);
-    connect(ui->pushButtonClose, &QPushButton::clicked, this, &QDialog::accept);
+    QSqlQuery query(db);
+    if (query.exec("SELECT category_id, category_name FROM categories ORDER BY category_id ASC")) {
+        while (query.next()) {
+            int id = query.value(0).toInt();
+            QString name = query.value(1).toString();
+            ui->comboBoxCategory->addItem(name, id);
+        }
+    } else {
+        qDebug() << "Помилка при завантаженні категорій:" << query.lastError().text();
+    }
+
+    connect(ui->comboBoxCategory, &QComboBox::currentIndexChanged,
+            this, &Delete::onCategoryChanged);
+    connect(ui->pushButtonDelete, &QPushButton::clicked,
+            this, &Delete::onDeleteClicked);
+    connect(ui->pushButtonClose, &QPushButton::clicked,
+            this, &QDialog::accept);
     onCategoryChanged(0);
 }
 
@@ -36,12 +47,11 @@ void Delete::onCategoryChanged(int index)
         QMessageBox::warning(this, "Помилка", "База даних не підключена!");
         return;
     }
-
-    QString category = ui->comboBoxCategory->currentData().toString();
-    loadProductIDs(category);
+    int categoryId = ui->comboBoxCategory->currentData().toInt();
+    loadProductIDs(categoryId);
 }
 
-void Delete::loadProductIDs(const QString &category)
+void Delete::loadProductIDs(int categoryId)
 {
     ui->comboBoxProductID->clear();
 
@@ -49,10 +59,10 @@ void Delete::loadProductIDs(const QString &category)
     query.prepare(R"(
         SELECT product_id, brand, model
         FROM products
-        WHERE category = ?
+        WHERE category_id = ?
         ORDER BY product_id ASC
     )");
-    query.addBindValue(category);
+    query.addBindValue(categoryId);
 
     if (!query.exec()) {
         QMessageBox::warning(this, "Помилка",
@@ -67,11 +77,11 @@ void Delete::loadProductIDs(const QString &category)
         QString displayText = QString("%1 — %2 %3").arg(id).arg(brand).arg(model);
         ui->comboBoxProductID->addItem(displayText, id);
     }
+
     ui->comboBoxProductID->view()->setTextElideMode(Qt::ElideNone);
     ui->comboBoxProductID->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     ui->comboBoxProductID->view()->setMinimumWidth(350);
 }
-
 void Delete::onDeleteClicked()
 {
     if (!db.isOpen()) {
@@ -85,16 +95,11 @@ void Delete::onDeleteClicked()
         return;
     }
 
-    int id = idData.toInt();
-    QString category = ui->comboBoxCategory->currentData().toString();
+    int productId = idData.toInt();
 
     QSqlQuery query(db);
-    query.prepare(R"(
-        DELETE FROM products
-        WHERE product_id = ? AND category = ?
-    )");
-    query.addBindValue(id);
-    query.addBindValue(category);
+    query.prepare("DELETE FROM products WHERE product_id = ?");
+    query.addBindValue(productId);
 
     if (!query.exec()) {
         QMessageBox::warning(this, "Помилка",
@@ -103,5 +108,6 @@ void Delete::onDeleteClicked()
     }
 
     QMessageBox::information(this, "Успіх", "Товар успішно видалено!");
-    loadProductIDs(category);
+    int categoryId = ui->comboBoxCategory->currentData().toInt();
+    loadProductIDs(categoryId);
 }
